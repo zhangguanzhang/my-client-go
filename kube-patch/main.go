@@ -43,7 +43,7 @@ var (
 
 type PATCH struct {
 	clientset  *kubernetes.Clientset
-	timeout    *int64
+	timeout    int64
 	bin        bool
 	masterIPs  []string
 	nodeIPs    []string
@@ -62,11 +62,26 @@ type svcInfo struct {
 }
 
 func main() {
-	apiserverHost := *flag.String("apiserver-host", "", "The address of the Kubernetes Apiserver "+
+	var (
+		EnableKubelet     bool
+		EnableKubeProxy   bool
+		apiserverHost     string
+		kubeConfigPath    string
+		controllerSVCName string
+		schedulerSVCName  string
+		kubeletSVCName    string
+		kubeproxySVCName  string
+		controllerPort    int32
+		schedulerPort     int32
+		kubeproxyPort     int32
+		kubeletPort       int32
+		timeout           int64
+	)
+	flag.StringVar(&apiserverHost, "apiserver-host", "", "The address of the Kubernetes Apiserver "+
 		"to connect to in the format of protocol://address:port, e.g., "+
 		"http://localhost:8080. If not specified, the assumption is that the binary runs inside a "+
 		"Kubernetes cluster and local discovery is attempted.")
-	kubeConfigPath := *flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+	flag.StringVar(&kubeConfigPath, "kubeconfig", "", "absolute path to the kubeconfig file")
 	//if home := homedir.HomeDir(); home != "" {
 	//	_, err := os.Stat(filepath.Join(home, ".kube", "config"))
 	//	if err != nil && os.IsNotExist(err) {
@@ -79,21 +94,17 @@ func main() {
 	if os.Getenv("KUBECONFIG") != "" {
 		kubeConfigPath = os.Getenv("KUBECONFIG")
 	}
-	timeout           := flag.Int64("timeout", 5, "connect timeout")
-	controllerSVCName := *flag.String("controller-svc-name", "kube-controller-manager", "the svc name of the kube-controller-manager")
-	controllerPort    := *flag.Int32("controller-port", 10252, "the metrics port of the kube-controller-manager")
-	schedulerSVCName  := *flag.String("scheduler-svc-name", "kube-scheduler", "the svc name of the kube-scheduler")
-	schedulerPort     := *flag.Int32("scheduler-port", 10251, "the metrics port of the kube-scheduler")
-	kubeletSVCName    := *flag.String("kubelet-svc-name", "kubelet", "the svc name of the kubelet")
-	kubeletPort       := *flag.Int32("kubelet-port", 10250, "the metrics port of the kubelet")
-
-	EnableKubelet     := *flag.Bool("kubelet", true, "enable patch the kubelet")
-
-	kubeproxySVCName  := *flag.String("kubeproxy-svc-name", "kube-proxy", "the svc name of the kube-proxy")
-	kubeproxyPort     := *flag.Int32("kubeproxy-port", 10249, "the metrics port of the kube-proxy")
-
-	EnableKubeProxy   := *flag.Bool("kubeproxy", true, "enable patch the kube-proxy")
-
+	flag.Int64Var(&timeout, "timeout", 5, "connect timeout")
+	flag.StringVar(&controllerSVCName, "controller-svc-name", "kube-controller-manager", "the svc name of the kube-controller-manager")
+	flag.Int32Var(&controllerPort, "controller-port", 10252, "the metrics port of the kube-controller-manager")
+	flag.StringVar(&schedulerSVCName, "scheduler-svc-name", "kube-scheduler", "the svc name of the kube-scheduler")
+	flag.Int32Var(&schedulerPort, "scheduler-port", 10251, "the metrics port of the kube-scheduler")
+	flag.StringVar(&kubeletSVCName, "kubelet-svc-name", "kubelet", "the svc name of the kubelet")
+	flag.Int32Var(&kubeletPort, "kubelet-port", 10250, "the metrics port of the kubelet")
+	flag.BoolVar(&EnableKubelet, "kubelet", true, "enable patch the kubelet")
+	flag.StringVar(&kubeproxySVCName, "kubeproxy-svc-name", "kube-proxy", "the svc name of the kube-proxy")
+	flag.Int32Var(&kubeproxyPort, "kubeproxy-port", 10249, "the metrics port of the kube-proxy")
+	flag.BoolVar(&EnableKubeProxy, "kubeproxy", true, "enable patch the kube-proxy")
 	flag.Parse()
 
 	controller := &svcInfo{
@@ -205,7 +216,7 @@ func main() {
 	log.Println("See you next time!")
 }
 
-func NewPATCH(kubeConfigPath string, apiserverHost string, timeout *int64, controller, scheduler, kubelet, kubeproxy *svcInfo) (*PATCH, error) {
+func NewPATCH(kubeConfigPath string, apiserverHost string, timeout int64, controller, scheduler, kubelet, kubeproxy *svcInfo) (*PATCH, error) {
 	var (
 		config *rest.Config
 		err    error
@@ -244,7 +255,7 @@ func NewPATCH(kubeConfigPath string, apiserverHost string, timeout *int64, contr
 
 func (p *PATCH) CollectionInfo() error {
 	nodes, err := p.clientset.CoreV1().Nodes().List(metav1.ListOptions{
-		TimeoutSeconds: p.timeout,
+		TimeoutSeconds: &p.timeout,
 	})
 	if err != nil {
 		return err
@@ -259,7 +270,7 @@ func (p *PATCH) CollectionInfo() error {
 
 	kubePodLists, err := p.clientset.CoreV1().Pods(metav1.NamespaceSystem).List(metav1.ListOptions{
 		LabelSelector:  "tier=control-plane,component=kube-apiserver",
-		TimeoutSeconds: p.timeout,
+		TimeoutSeconds: &p.timeout,
 	})
 	if err != nil {
 		return err
@@ -477,4 +488,3 @@ func (p *PATCH) PatchKubeletOrProxy(instance *svcInfo) error {
 
 	return nil
 }
-
